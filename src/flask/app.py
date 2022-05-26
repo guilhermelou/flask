@@ -650,9 +650,7 @@ class Flask(Scaffold):
 
         .. versionadded:: 0.8
         """
-        root_path = self.root_path
-        if instance_relative:
-            root_path = self.instance_path
+        root_path = self.instance_path if instance_relative else self.root_path
         defaults = dict(self.default_config)
         defaults["ENV"] = get_env()
         defaults["DEBUG"] = get_debug_flag()
@@ -796,7 +794,7 @@ class Flask(Scaffold):
         for name in names:
             if name in self.template_context_processors:
                 for func in self.template_context_processors[name]:
-                    context.update(func())
+                    context |= func()
 
         context.update(orig_ctx)
 
@@ -809,7 +807,7 @@ class Flask(Scaffold):
         """
         rv = {"app": self, "g": g}
         for processor in self.shell_context_processors:
-            rv.update(processor())
+            rv |= processor()
         return rv
 
     #: What environment the app is running in. Flask and extensions may
@@ -939,11 +937,7 @@ class Flask(Scaffold):
             sn_host, _, sn_port = server_name.partition(":")
 
         if not host:
-            if sn_host:
-                host = sn_host
-            else:
-                host = "127.0.0.1"
-
+            host = sn_host or "127.0.0.1"
         if port or port == 0:
             port = int(port)
         elif sn_port:
@@ -1645,10 +1639,7 @@ class Flask(Scaffold):
 
         .. versionadded:: 2.0
         """
-        if iscoroutinefunction(func):
-            return self.async_to_sync(func)
-
-        return func
+        return self.async_to_sync(func) if iscoroutinefunction(func) else func
 
     def async_to_sync(
         self, func: t.Callable[..., t.Coroutine]
@@ -1735,9 +1726,7 @@ class Flask(Scaffold):
             url_adapter = req_ctx.url_adapter
             blueprint_name = req_ctx.request.blueprint
 
-            # If the endpoint starts with "." and the request matches a
-            # blueprint, the endpoint is relative to the blueprint.
-            if endpoint[:1] == ".":
+            if endpoint.startswith("."):
                 if blueprint_name is not None:
                     endpoint = f"{blueprint_name}{endpoint}"
                 else:
@@ -1954,10 +1943,11 @@ class Flask(Scaffold):
             # If subdomain matching is disabled (the default), use the
             # default subdomain in all cases. This should be the default
             # in Werkzeug but it currently does not have that feature.
-            if not self.subdomain_matching:
-                subdomain = self.url_map.default_subdomain or None
-            else:
-                subdomain = None
+            subdomain = (
+                None
+                if self.subdomain_matching
+                else self.url_map.default_subdomain or None
+            )
 
             return self.url_map.bind_to_environ(
                 request.environ,
@@ -2270,9 +2260,6 @@ class Flask(Scaffold):
             except Exception as e:
                 error = e
                 response = self.handle_exception(e)
-            except:  # noqa: B001
-                error = sys.exc_info()[1]
-                raise
             return response(environ, start_response)
         finally:
             if self.should_ignore_error(error):
